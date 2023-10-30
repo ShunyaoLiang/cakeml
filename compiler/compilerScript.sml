@@ -18,7 +18,7 @@ open riscv_configTheory export_riscvTheory
 open mips_configTheory export_mipsTheory
 open arm7_configTheory export_arm7Theory
 open ag32_configTheory export_ag32Theory
-open panPtreeConversionTheory pan_to_targetTheory
+open panPtreeConversionTheory pan_to_targetTheory panScopeTheory
 
 val _ = new_theory"compiler";
 
@@ -171,6 +171,7 @@ Datatype:
                 | TypeError mlstring
                 | AssembleError
                 | ConfigError mlstring
+                | ScopeError
 End
 
 Definition find_next_newline_def:
@@ -277,10 +278,13 @@ Definition compile_pancake_def:
   case panPtreeConversion$parse_funs_to_ast input of
   | NONE => Failure (ParseError (strlit "Failed pancake parsing"))
   | SOME funs =>
-      let _ = empty_ffi (strlit "finished: lexing and parsing") in
-      case pan_to_target$compile_prog c funs of
-      | NONE => (Failure AssembleError)
-      | SOME (bytes,data,c) => (Success (bytes,data,c))
+      if ¬scope_check_prog funs then
+        (Failure ScopeError)
+      else
+        let _ = empty_ffi (strlit "finished: lexing and parsing") in
+        case pan_to_target$compile_prog c funs of
+        | NONE => (Failure AssembleError)
+        | SOME (bytes,data,c) => (Success (bytes,data,c))
 End
 
 (* The top-level compiler *)
