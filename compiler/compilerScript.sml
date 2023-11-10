@@ -298,7 +298,8 @@ val error_to_str_def = Define`
        concat [strlit "### ERROR: type error\n"; s; strlit "\n"]
      else s) /\
   (error_to_str (ConfigError s) = concat [strlit "### ERROR: config error\n"; s; strlit "\n"]) /\
-  (error_to_str AssembleError = strlit "### ERROR: assembly error\n")`;
+  (error_to_str AssembleError = strlit "### ERROR: assembly error\n") /\
+  (error_to_str ScopeError = strlit "### ERROR: scope error\n")`;
 
 val is_error_msg_def = Define `
   is_error_msg x = mlstring$isPrefix (strlit "###") x`;
