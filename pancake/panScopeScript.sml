@@ -32,9 +32,10 @@ End
 
 Definition scope_check_def:
   (scope_check ctxt Skip = T) ∧
-  (scope_check ctxt (Dec v e p) =
-    scope_check (ctxt with vars := v :: ctxt.vars) p) ∧
-  (scope_check ctxt (Assign v e) = MEM v ctxt.vars) ∧
+  (scope_check ctxt (Dec v e p) = (scope_check_exp ctxt e ∧
+    scope_check (ctxt with vars := v :: ctxt.vars) p)) ∧
+  (scope_check ctxt (Assign v e) =
+    (MEM v ctxt.vars ∧ scope_check_exp ctxt e)) ∧
   (scope_check ctxt (Store ad v) =
     (scope_check_exp ctxt ad ∧ scope_check_exp ctxt v)) ∧
   (scope_check ctxt (StoreByte dest src) =
