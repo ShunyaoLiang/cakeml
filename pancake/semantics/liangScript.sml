@@ -4,12 +4,14 @@
 *)
 
 (* Below is a glossary of identifiers used in this file.
-     * addr: Used for memory addresses.
-     * m:    Stands for "memory". Pluralised as ms.
-     * v:    Used for Pancake variable names.
-     * ws:   Short for "working set". Here, it is usually an upper bound on the
-             range of heap addresses that a Pancake program or expression will
-             access. Thanks COMP3891!
+     * addr:  Used for memory addresses.
+     * addrs: Plural of addr.
+     * m:     Stands for "memory".
+     * ms:    Plural of m.
+     * v:     Used for Pancake variable names.
+     * ws:    1. Short for "working set". Here, it is usually an upper bound on
+              the range of heap addresses that a Pancake program or expression
+              will access. Thanks COMP3891! 2. Plural of w.
    *)
 
 open preamble panLangTheory panSemTheory;
@@ -19,22 +21,30 @@ val _ = new_theory "liang";
 
 (* Find an upper bound on the working set of a Pancake program. *)
 
+Type memory = (Type `:'a word -> 'a word_lab`)
+Type locals = (Type `:varname |-> 'a v`)
+
 (* The fields are named after the fields of state in panSemTheory. *)
 Datatype:
-  context = <| memory    : 'a word -> 'a word_lab set ;
-               locals    : varname |-> 'a v set ;
-               be        : bool ;
-               base_addr : 'a word |>
+  (* XXX: Can I do away with the phantom field ffi? *)
+  context = <| memory_locals : ('a memory # 'a locals) set ;
+               be            : bool ;
+               base_addr     : 'a word ;
+               ffi           : 'ffi |>
 End
 
-(* Find the range of an expression. *)
-Definition myrange_def: (* TODO: rename to range *)
-  myrange (Const w) ctxt = {Val (Word w)} ∧
-  myrange (Var v) ctxt = ctxt.locals ' v ∧
-  myrange BaseAddr ctxt = {Val (Word ctxt.base_addr)} ∧
-  (* TODO *)
-  myrange (e:'a panLang$exp) (ctxt:'a context) = (ARB:'a v set)
+Definition from_state_def:
+  from_state s = <| memory_locals := {(s.memory, s.locals)} ;
+                    be        := s.be ;
+                    base_addr := s.base_addr ;
+                    ffi       := ARB |>
 End
+
+Definition myrange_def:
+ myrange (e:'a panLang$exp) (ctxt:('a, 'ffi) context) =
+    { ARB:('a, 'ffi) state | (memory, locals) ∈ ctxt.memory_locals}
+End
+
 
 (* Find an upper bound on the working set of an expression. *)
 Definition working_set_exp_def:
@@ -49,7 +59,9 @@ Definition working_set_exp_def:
     (let addrs = { addr | Val (Word addr) ∈ myrange src ctxt } in
       { x | (addr, x) | addr ∈ addrs ∧
                         addr ≤ x ∧ x ≤ addr + n2w (size_of_shape shape) }) ∧
-  working_set_exp (LoadByte e) ctxt = working_set_exp e ctxt ∧
+  working_set_exp (LoadByte e) ctxt =
+    (let addrs = { addr | Val (Word addr) ∈ myrange src ctxt } in
+      working_set_exp e ctxt ∪ addrs) ∧
   working_set_exp (Op op es) ctxt =
     (* XXX: See note above on the Struct case. *)
     FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
@@ -160,9 +172,20 @@ val specffi = inst [beta |-> Type `:'ffi`];
 fun spec_eqn_strip_forall tm =
   list_mk_conj (map (snd o strip_forall) (strip_conj tm));
 
+val mem_load_ty = specffi (ty_antiq (type_of (Term `mem_load`)));
+val mem_loads_ty = specffi (ty_antiq (type_of (Term `mem_loads`)));
+
 Definition nice_mem_load_def:
-  (* TODO *)
-  (nice_mem_load One (addr:'a word) (dm:'a word set) (m:'a word -> 'a word_lab) = SOME (Val (m addr)))
+  (nice_mem_load One addr dm m = SOME (Val (m addr))) ∧
+  ^(spec_eqn_strip_forall
+    (subst
+      [ Term `mem_load:^mem_load_ty`   |-> Term `nice_mem_load:^mem_load_ty`
+      , Term `mem_loads:^mem_loads_ty` |-> Term `nice_mem_loads:^mem_loads_ty` ]
+      (concl mem_load_def)))
+Termination
+  wf_rel_tac `measure (λx. case x of
+                             | (INR (shapes, _)) => list_size shape_size shapes
+                             | (INL (shapes, _)) => shape_size shapes)`
 End
 
 Definition nice_mem_load_byte_def:
@@ -182,7 +205,6 @@ Definition nice_eval_def:
         Term `mem_load_byte`  |-> Term `nice_mem_load_byte` ]
       (concl eval_def)))
 Termination
-  (* Taken from the termination proof for eval. *)
   wf_rel_tac `measure (exp_size ARB o SND)`
 End
 
@@ -237,13 +259,6 @@ End
 
 (* The major theorem. *)
 
-Definition from_state_def:
-  from_state s = <| memory    := (λx. {x}) o s.memory ;
-                    locals    := (λx. {x}) o_f s.locals ;
-                    be        := s.be ;
-                    base_addr := s.base_addr |>
-End
-
 (* Useful with DEP_PURE_ONCE_REWRITE_TAC. *)
 Theorem no_out_of_bounds:
   SND (heap_use_bound p (from_state s)) ⊆ s.memaddrs ⇒
@@ -254,237 +269,4 @@ QED
 
 
 val _ = export_theory ();
-
-
-
-
-
-
-
-
-
-
-
-
-(*
-
-
-∧
-  heap_use_bound (Store dst src) (ctxt:'a context) =
-    (let dm = heap_use_bound_exp dst ctxt and
-         dm' = heap_use_bound_exp src ctxt in
-      (* A function that given
-           - a source expression
-           - a destination expression
-           - and a memory state
-          gives a new memory state *)
-         memory =  { domemorystores ad (flatten v) ctxt.memory | ad ∈ range dst ctxt ∧ v ∈ range src ctxt }
-         memory (x:'a word) = ({}:'a word_lab set) in
-
-(*
-('a word -> 'a word_lab set) set ->
-'a word -> 'a word_lab set
-
-λx. BIGUNION { memory x | memory ∈ allmemories }
-
-Possible.
-*)
-
-      (ctxt with memory := memory, dm ∪ dm'))
-End
-         memory x = if x ∈ dm then range v ctxt else ctxt.memory x in
-      ARB)
-End
-      (ctxt with memory))
-End
-
-Definition range_def:
-  range ctxt base_addr (Const w) = Word {w} ∧
-  range (ctxt: varname |-> 'a value_set) base_addr (Var v) = ctxt ' v ∧
-  range ctxt base_addr (Label f) = Word {} ∧
-  range ctxt base_addr (Struct es) = Struct (MAP (range ctxt base_addr) es) ∧
-  range ctxt base_addr (Field index e) =
-    case range ctxt base_addr e of Struct es => EL index es ∧
-  (* TODO: Is this possible? *)
-  range ctxt base_addr (Load One e) = Word UNIV ∧
-  range ctxt base_addr (Load (Comb shs)) =
-    Struct (MAP (λx. range ctxt base_addr (Load x)) shs)
-End
-  range ctxt base_addr BaseAddr = Word {base_addr} ∧
-  (* TODO: Finish this! *)
-  range (ctxt:varname |-> 'a word set) base_addr (e:'a panLang$exp) =
-    Word (UNIV:'a word set)
-End
-
-(* TODO: heap_use_bound_exp_def *)
-
-Definition heap_use_bound_def:
-  heap_use_bound ctxt base_addr Skip = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr (Dec v e p) =
-    heap_use_bound (ctxt |+ (v, range ctxt base_addr e)) base_addr p ∧
-  heap_use_bound ctxt base_addr (Assign v e) =
-    (ctxt |+ (v, range ctxt base_addr e), {}) ∧
-  heap_use_bound ctxt base_addr (Store ad v) =
-    case range ctxt base_addr ad of
-    (* XXX: Choose better variable names. *)
-    (ctxt, {y | ∃x. x ∈ range ctxt base_addr ad ∧ x ≤ y ∧ y < x + bytes_in_word}) ∧
-  heap_use_bound ctxt base_addr (StoreByte ad v) =
-    (ctxt, range ctxt base_addr ad) ∧
-  heap_use_bound ctxt base_addr (Seq p1 p2) =
-    (let (ctxt', dm) = heap_use_bound ctxt base_addr p1 in
-      let (ctxt'', dm') = heap_use_bound ctxt' base_addr p2 in
-        (ctxt'', dm ∪ dm')) ∧
-  heap_use_bound ctxt base_addr (If e c1 c2) =
-    (let (ctxt', dm) = heap_use_bound ctxt base_addr c1 in
-      let (ctxt'', dm') = heap_use_bound ctxt base_addr c2 in
-        (FMERGE (UNION) ctxt' ctxt'', dm ∪ dm')) ∧
-  (* This is sound because nice_semantics is equivalent to semantics for
-     While terms. *)
-  heap_use_bound ctxt base_addr (While e c) = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr Break = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr Continue = (ctxt, {}) ∧
-  (* Sound for similar reasons to the While case. *)
-  heap_use_bound ctxt base_addr (Call rtyp e es) = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr (ExtCall f ptr1 len1 ptr2 len2) = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr (Raise eid e) = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr (Return e) = (ctxt, {}) ∧
-  heap_use_bound ctxt base_addr Tick = (ctxt, {})
-End
-
-
-
-(* THIS IS TOO MUCH HEADACHE
-(* A value_set represents the possible values of a local variable. Here the
-   name Value is overloading the word value; it means a value whose size is a
-   single word. In other words, its shape is one or it is not a struct. *)
-Datatype:
-  value_set = Value ('a word_lab set)
-            | Struct (value_set list)
-End *)
-
-(* New Space - BROKEN *)
-
-Datatype: context = <| locals : varname |-> 'a v ; base_addr : 'a word |>
-End
-
-Definition is_prog_safe_for_heap_def:
-  ((is_prog_safe_for_heap
-    :('a word) set -> 'a panLang$prog -> 'a context
-    -> (bool # 'a context))
-    dm Skip ctxt = (T, ctxt)) ∧
-  (is_prog_safe_for_heap s dm (Dec v e p) ctxt = (T, ctxt)) ∧
-  (is_prog_safe_for_heap s dm Tick ctxt = (T, ctxt))
-End
-
-Definition body_def:
-  body s fname = SND (s.code ' fname)
-End
-
-Definition is_safe_for_heap_def:
-  (is_safe_for_heap :('a, 'ffi) state -> ('a word) set -> bool) s dm =
-    SND (is_prog_safe_for_heap dm (body s "main") FEMPTY)
-End
-
-(* Space *)
-
-Type context = ``:varname |-> ('a word) set``;
-
-Definition context_union_def:
-  context_union ctxt ctxt' =
-    FUN_FMAP
-      (λv.
-        (case FLOOKUP ctxt v of NONE => EMPTY | SOME x => x) ∪
-        (case FLOOKUP ctxt' v of NONE => EMPTY | SOME x => x))
-      (FDOM ctxt ∪ FDOM ctxt')
-End
-
-Definition f_exp_def:
-  f_exp (ctxt:'a context) (e:'a panLang$exp) = {0w}
-End
-
-Definition f_def:
-  (f (ctxt:'a context) (Skip) = (ctxt, EMPTY)) ∧
-  (f ctxt (Dec v e p) =
-    f (ctxt |+ (v, f_exp ctxt e)) p) ∧
-  (f ctxt (Assign v e) = (ctxt |+ (v, f_exp ctxt e), EMPTY)) ∧
-  (f ctxt (Store ad v)) = (ctxt, f_exp ctxt ad) ∧
-  (f ctxt (StoreByte dest src) = (ctxt, f_exp ctxt dest)) ∧
-  (f ctxt (Seq p p') =
-    let (ctxt', dm') = f ctxt p in
-      let (ctxt'', dm'') = f ctxt' p' in
-        (ctxt'', dm' ∪ dm'')) ∧
-  (f ctxt (If e p p') =
-    let (ctxt', dm) = f ctxt p in
-      let (ctxt'', dm') = f ctxt p' in
-        (context_union ctxt' ctxt'', dm ∪ dm' ∪ f_exp ctxt e)) ∧
-  (f ctxt (While e p) = (ctxt, UNIV))∧ (* TODO *)
-  (f ctxt Break = (ctxt, EMPTY)) ∧
-  (f ctxt Continue = (ctxt, EMPTY)) ∧
-  (f ctxt (Call rtyp e es) = (ctxt, UNIV)) ∧ (* TODO *)
-  (f ctxt (ExtCall f' ptr1 len1 ptr2 len2) = (ctxt, EMPTY)) ∧ (* TODO *)
-  (f ctxt (Raise eid excp) = (ctxt, EMPTY)) ∧
-  (f ctxt (Return rt) = (ctxt, EMPTY)) ∧
-  (f ctxt Tick = (ctxt, EMPTY))
-End
-
-(* *)
-
-Definition mem_load'_def:
-  (mem_load' One addr dm m = SOME (Val (m addr))) ∧
-  (mem_load' sh addr dm m = mem_load sh addr dm m)
-End
-
-Definition mem_load_byte'_def:
-  mem_load_byte' (m:'a word -> 'a word_lab) (dm:('a word) set) be w =
-    case m (byte_align w) of
-      (* I wonder if we can also eliminate this check. *)
-      | Label _ => NONE
-      | Word v => SOME (get_byte w v be)
-End
-
-val instffi = inst [``:'b`` |-> ``:'ffi``];
-
-val eval'_def =
-  let
-    val ty = instffi (ty_antiq (type_of ``eval``))
-    val tm = subst
-        [ ``eval :^ty``     |-> ``eval' :^ty``,
-          ``mem_load``      |-> ``mem_load'``,
-          ``mem_load_byte`` |-> ``mem_load_byte'`` ]
-        (concl eval_def)
-  in
-    mk_thm ([], tm)
-  end;
-
-val evaluate'_def =
-  let
-    val ty1 = instffi (ty_antiq (type_of ``eval``))
-    val ty2 = instffi (ty_antiq (type_of ``evaluate``))
-    val tm = subst
-        [ ``eval :^ty1``     |-> ``eval' :^ty1``,
-          ``evaluate :^ty2`` |-> ``evaluate' :^ty2`` ]
-        (concl evaluate_def)
-  in
-    mk_thm ([], tm)
-  end;
-
-val semantics'_def =
-  let
-    val ty = instffi (ty_antiq (type_of ``evaluate``))
-    val tm = subst
-        [ ``evaluate :^ty`` |-> ``evaluate' :^ty`` ]
-        (concl semantics_def)
-  in
-    mk_thm ([], tm)
-  end;
-
-(* *)
-
-Theorem x:
-  snd (f FEMPTY (panLang$Call NONE (Label start) [])) ⊆ s.memaddrs ⇒
-  semantics s start = semantics' s start
-Proof
-  simp[f_def, semantics'_def]
-QED
-*)
 
