@@ -1,14 +1,13 @@
 (*
-  Automate verification of the property that Pancake program does not access
+  Automate verification of the property that a Pancake program does not access
   memory that is out of bounds.
 *)
 
 (* Below is a glossary of identifiers used in this file.
-     * addr:  Used for memory addresses.
-     * addrs: Plural of addr.
-     * m:     Stands for "memory".
-     * ms:    Plural of m.
-     * v:     Used for Pancake variable names.
+     * addr:  Used for memory addresses. Pluralised as addrs.
+     * ctxt:  Short for "context".
+     * m:     Stands for "memory". Pluralised as ms.
+     * v:     1. Used for Pancake variable names. 2. A Pancake value.
      * ws:    1. Short for "working set". Here, it is usually an upper bound on
               the range of heap addresses that a Pancake program or expression
               will access. Thanks COMP3891! 2. Plural of w.
@@ -19,147 +18,8 @@ open preamble panLangTheory panSemTheory;
 val _ = new_theory "liang";
 
 
-(* Find an upper bound on the working set of a Pancake program. *)
-
-Type memory = (Type `:'a word -> 'a word_lab`)
-Type locals = (Type `:varname |-> 'a v`)
-
-(* The fields are named after the fields of state in panSemTheory. *)
-Datatype:
-  (* XXX: Can I do away with the phantom field ffi? *)
-  context = <| memory_locals : ('a memory # 'a locals) set ;
-               be            : bool ;
-               base_addr     : 'a word ;
-               ffi           : 'ffi |>
-End
-
-Definition from_state_def:
-  from_state s = <| memory_locals := {(s.memory, s.locals)} ;
-                    be        := s.be ;
-                    base_addr := s.base_addr ;
-                    ffi       := ARB |>
-End
-
-Definition myrange_def:
- myrange (e:'a panLang$exp) (ctxt:('a, 'ffi) context) =
-    { ARB:('a, 'ffi) state | (memory, locals) ∈ ctxt.memory_locals}
-End
-
-
-(* Find an upper bound on the working set of an expression. *)
-Definition working_set_exp_def:
-  working_set_exp (Const w) (ctxt:'a context) = ({}:'a word set) ∧
-  working_set_exp (Var v) ctxt = {} ∧
-  working_set_exp (Label fname) ctxt = {} ∧
-  working_set_exp (Struct es) ctxt =
-    (* XXX: If I reordered the arguments this would not need a λ-abstraction. *)
-    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
-  working_set_exp (Field index e) ctxt = working_set_exp e ctxt ∧
-  working_set_exp (Load shape src) ctxt =
-    (let addrs = { addr | Val (Word addr) ∈ myrange src ctxt } in
-      { x | (addr, x) | addr ∈ addrs ∧
-                        addr ≤ x ∧ x ≤ addr + n2w (size_of_shape shape) }) ∧
-  working_set_exp (LoadByte e) ctxt =
-    (let addrs = { addr | Val (Word addr) ∈ myrange src ctxt } in
-      working_set_exp e ctxt ∪ addrs) ∧
-  working_set_exp (Op op es) ctxt =
-    (* XXX: See note above on the Struct case. *)
-    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
-  working_set_exp (Panop op es) ctxt =
-    (* XXX: See note above on the Struct case. *)
-    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
-  working_set_exp (Cmp cmp e1 e2) ctxt =
-    working_set_exp e1 ctxt ∪ working_set_exp e2 ctxt ∧
-  working_set_exp (Shift sh e n) ctxt = working_set_exp e ctxt ∧
-  working_set_exp BaseAddr ctxt = {}
-Termination
-  wf_rel_tac `measure (exp_size ARB o FST)`
-End
-
-(* Named after mem_store in panSemTheory. *)
-Definition mem_store_def:
-  mem_store addr w m = (addr =+ {w}) m
-End
-
-(* Named after mem_stores in panSemTheory. *)
-Definition mem_stores_def:
-  mem_stores addr [] m = m ∧
-  mem_stores addr (w::ws) m =
-    mem_stores (addr + bytes_in_word) ws (mem_store addr w m)
-End
-
-(* Named after mem_store_byte in panSemTheory. *)
-Definition mem_store_byte_def:
-  (* TODO: Figure out set_byte and what we should replace ARB with. *)
-  mem_store_byte be addr b m =
-    (byte_align addr =+ {Word (set_byte addr b ARB be)}) m
-End
-
-Definition context_union_def:
-  context_union ctxt1 ctxt2 =
-    <| memory    := λw. ctxt1.memory w ∪ ctxt2.memory w ;
-       locals    := FMERGE (UNION) ctxt1.locals ctxt2.locals ;
-       be        := ctxt1.be ;
-       base_addr := ctxt1.base_addr |>
-End
-
-(* Find an upper bound on the working set of a program. *)
-Definition working_set_def:
-  working_set Skip ctxt = (ctxt, {}) ∧
-  working_set (Dec v e prog) ctxt =
-    (let ws = working_set_exp e ctxt and
-         ctxt' = ctxt with locals := ctxt.locals |+ (v, myrange e ctxt);
-         (ctxt'', ws') = working_set prog ctxt' in
-      (ctxt'', ws ∪ ws')) ∧
-  working_set (Assign v src) ctxt =
-    (let ws = working_set_exp src ctxt and
-         ctxt' = ctxt with locals := ctxt.locals |+ (v, myrange src ctxt) in
-      (ctxt', ws)) ∧
-  (* XXX: Difficult to compute. *)
-  working_set (Store dst src) ctxt =
-    (let ws = working_set_exp dst ctxt and
-         ws' = working_set_exp src ctxt and
-         addrs = { addr | (Val (Word addr)) ∈ myrange dst ctxt };
-         (* All possible memory states after performing this store. *)
-         ms = { mem_stores addr (flatten value) ctxt.memory
-              | addr ∈ addrs ∧ value ∈ myrange src ctxt } in
-      (ctxt with memory := (λw. BIGUNION { m w | m ∈ ms }),
-       ws ∪ ws' ∪ addrs)) ∧
-  working_set (StoreByte dst src) ctxt =
-    (let ws = working_set_exp dst ctxt and
-         ws' = working_set_exp src ctxt and
-         addrs = { addr | (Val (Word addr)) ∈ myrange dst ctxt };
-         ms = { mem_store_byte ctxt.be addr (w2w w) ctxt.memory
-              | addr ∈ addrs ∧ (Val (Word w)) ∈ myrange src ctxt } in
-      (ctxt with memory := (λw. BIGUNION { m w | m ∈ ms }), ws ∪ ws' ∪ addrs)) ∧
-  working_set (Seq c1 c2) ctxt =
-    (let (ctxt', ws) = working_set c1 ctxt;
-        (ctxt'', ws') = working_set c2 ctxt' in
-      (ctxt'', ws ∪ ws')) ∧
-  working_set (If e c1 c2) ctxt =
-    (let ws = working_set_exp e ctxt and
-        (ctxt', ws') = working_set c1 ctxt and
-        (ctxt'', ws'') = working_set c2 ctxt in
-      (context_union ctxt' ctxt'', ws ∪ ws' ∪ ws'')) ∧
-  (* For the purposes of defining the major theorem below, this is sound because
-     the nice semantics are the same as the semantics for While. This saves us
-     a huge headache, but restricts working_set to finding the bound up until
-     the next While loop. *)
-  working_set (While _ _) ctxt = (ctxt, {}) ∧
-  working_set Break ctxt = (ctxt, {}) ∧
-  working_set Continue ctxt = (ctxt, {}) ∧
-  (* See the note above on the While case. *)
-  working_set (Call _ _ _) ctxt = (ctxt, {}) ∧
-  (* See the note above on the While case. *)
-  working_set (ExtCall _ _ _ _ _) ctxt = (ctxt, {}) ∧
-  working_set (Return e) ctxt = (ctxt, working_set_exp e ctxt) ∧
-  working_set (Raise eid e) ctxt = (ctxt, working_set_exp e ctxt) ∧
-  working_set Tick ctxt = (ctxt, {})
-End
-
-
-(* A "nice" modification of the Pancake semantics that does not check for
-   out-of-bounds memory accesses. *)
+(* A "nice" modification of the Pancake functional semantics that does not check
+   for out-of-bounds memory accesses. *)
 
 (* The type variables in the types of the functions we are substituting get
    instatiated, so we have to instatiate them the same way. The naming
@@ -220,14 +80,7 @@ Definition nice_mem_store_def:
     SOME ((addr =+ w) m)
 End
 
-(* We defined our own mem_stores and mem_store above. But here we need to
-   substitute their namesakes in panSemTheory. *)
-Overload mem_stores = ``panSem$mem_stores``;
-Overload mem_store = ``panSem$mem_store``;
-
 val mem_stores_ty = specffi (ty_antiq (type_of (Term `mem_stores`)));
-
-val mem_stores_def = panSemTheory.mem_stores_def;
 
 Definition nice_mem_stores_def:
   ^(spec_eqn_strip_forall
@@ -239,8 +92,6 @@ Definition nice_mem_stores_def:
 End
 
 val evaluate_ty = specffi (ty_antiq (type_of (Term `evaluate`)));
-
-Overload mem_store_byte = ``panSem$mem_store_byte``;
 
 Definition nice_evaluate_def:
   nice_evaluate (While e c, s) = evaluate (While e c, s) ∧
@@ -257,14 +108,159 @@ Definition nice_evaluate_def:
 End
 
 
-(* The major theorem. *)
+(* Find an upper bound on the working set of a Pancake program. *)
+
+(* The types representing local variables and memory in the semantics. *)
+(* XXX: I don't like type names conflicting with variable names. I think we can
+        just delete these. *)
+Type locals = (Type `:varname |-> 'a v`)
+Type memory = (Type `:'a word -> 'a word_lab`)
+
+(* The fields are named after the fields of state in panSemTheory. *)
+Datatype:
+  context = <| locals_memory : ('a locals # 'a memory) set ;
+               be            : bool ;
+               base_addr     : 'a word ;
+               ffi           : 'ffi itself |>
+End
+
+Definition state_to_context_def:
+  state_to_context (s:('a, 'ffi) state) =
+    <| locals_memory := {(s.locals, s.memory)} ;
+       be            := s.be ;
+       base_addr     := s.base_addr ;
+       ffi           := (:'ffi) |>
+End
+
+Definition range_def:
+  range (e:'a panLang$exp) (ctxt:('a, 'ffi) context) =
+    { THE (eval <| memory    := memory ;
+                   locals    := locals ;
+                   memaddrs  := UNIV ;
+                   be        := ctxt.be ;
+                   base_addr := ctxt.base_addr ;
+                   ffi       := ARB:'ffi ffi_state |>
+                e)
+    | locals, memory | (locals, memory) ∈ ctxt.locals_memory }
+End
+
+(* Find an upper bound on the working set of an expression. *)
+Definition working_set_exp_def:
+  working_set_exp (Const w) ctxt = ({}:'a word set) ∧
+  working_set_exp (Var v) ctxt = {} ∧
+  working_set_exp (Label fname) ctxt = {} ∧
+  working_set_exp (Struct es) ctxt =
+    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
+  working_set_exp (Field index e) ctxt = working_set_exp e ctxt ∧
+  working_set_exp (Load shape src) ctxt =
+    (let addrs = { addr | ValWord addr ∈ range src ctxt } in
+      { x | (addr, x) | addr ∈ addrs ∧
+                        addr ≤ x ∧ x ≤ addr + n2w (size_of_shape shape) }) ∧
+  working_set_exp (LoadByte e) ctxt =
+    (let addrs = { addr | ValWord addr ∈ range e ctxt } in
+      working_set_exp e ctxt ∪ addrs) ∧
+  working_set_exp (Op op es) ctxt =
+    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
+  working_set_exp (Panop op es) ctxt =
+    FOLDL (λws e. ws ∪ working_set_exp e ctxt) {} es ∧
+  working_set_exp (Cmp cmp e1 e2) ctxt =
+    working_set_exp e1 ctxt ∪ working_set_exp e2 ctxt ∧
+  working_set_exp (Shift sh e n) ctxt = working_set_exp e ctxt ∧
+  working_set_exp BaseAddr ctxt = {}
+Termination
+  wf_rel_tac `measure (exp_size ARB o FST)`
+End
+
+Definition context_union_def:
+  context_union ctxt1 ctxt2 =
+    <| locals_memory := ctxt1.locals_memory ∪ ctxt2.locals_memory ;
+       be            := ctxt1.be ;
+       base_addr     := ctxt1.base_addr ;
+       ffi           := ctxt1.ffi |>
+End
+
+(* Find an upper bound on the working set of a program. *)
+Definition working_set_def:
+  working_set (Skip:'a panLang$prog) (ctxt:('a, 'ffi) context) = (ctxt, {}) ∧
+  working_set (Dec v e p) ctxt =
+    (let ws = working_set_exp e ctxt and
+         values = range e ctxt;
+         lm = { (locals |+ (v, value), memory)
+              | (locals, memory) ∈ ctxt.locals_memory ∧ value ∈ values };
+         ctxt' = ctxt with locals_memory := lm;
+         (ctxt'', ws') = working_set p ctxt' in
+      (ctxt'', ws ∪ ws')) ∧
+  working_set (Assign v e) ctxt =
+    (let ws = working_set_exp e ctxt and
+         values = range e ctxt;
+         lm = { (locals |+ (v, value), memory)
+              | (locals, memory) ∈ ctxt.locals_memory ∧ value ∈ values } in
+      (ctxt with locals_memory := lm, ws)) ∧
+  working_set (Store dst src) ctxt =
+    (let ws = working_set_exp dst ctxt and
+         ws' = working_set_exp src ctxt and
+         addrs = { addr | ValWord addr ∈ range dst ctxt } and
+         values = range src ctxt;
+         lm = { (locals, THE (mem_stores addr (flatten value) UNIV memory))
+              | (locals, memory) ∈ ctxt.locals_memory ∧ addr ∈ addrs ∧
+                value ∈ values} in
+      (ctxt with locals_memory := lm, ws ∪ ws' ∪ addrs)) ∧
+  working_set (StoreByte dst src) ctxt =
+    (let ws = working_set_exp dst ctxt and
+         ws' = working_set_exp src ctxt and
+         addrs = { addr | ValWord addr ∈ range dst ctxt } and
+         ws = { w | ValWord w ∈ range src ctxt };
+         lm = { (locals, THE (mem_store_byte memory UNIV ctxt.be addr (w2w w)))
+              | locals, memory, addr, w
+              | (locals, memory) ∈ ctxt.locals_memory ∧ addr ∈ addrs ∧
+                w ∈ ws} in
+      (ctxt with locals_memory := lm, ws ∪ ws' ∪ addrs)) ∧
+  working_set (Seq c1 c2) ctxt =
+    (let (ctxt', ws) = working_set c1 ctxt;
+        (ctxt'', ws') = working_set c2 ctxt' in
+      (ctxt'', ws ∪ ws')) ∧
+  working_set (If e c1 c2) ctxt =
+    (let ws = working_set_exp e ctxt and
+        (ctxt', ws') = working_set c1 ctxt and
+        (ctxt'', ws'') = working_set c2 ctxt in
+      (context_union ctxt' ctxt'', ws ∪ ws' ∪ ws'')) ∧
+  (* For the purposes of defining the major theorem below, this is sound because
+     the nice semantics are the same as the semantics for While. This saves us
+     a huge headache, but restricts working_set to finding the bound up until
+     the next While loop. *)
+  working_set (While _ _) ctxt = (ctxt, {}) ∧
+  working_set Break ctxt = (ctxt, {}) ∧
+  working_set Continue ctxt = (ctxt, {}) ∧
+  (* See the note above on the While case. *)
+  working_set (Call _ _ _) ctxt = (ctxt, {}) ∧
+  (* See the note above on the While case. *)
+  working_set (ExtCall _ _ _ _ _) ctxt = (ctxt, {}) ∧
+  working_set (Return e) ctxt = (ctxt, working_set_exp e ctxt) ∧
+  working_set (Raise eid e) ctxt = (ctxt, working_set_exp e ctxt) ∧
+  working_set Tick ctxt = (ctxt, {})
+End
+
+
+(* Prove the major theorem: that if our bound on the working set of a Pancake
+   program is within the allocated heap, we may replace the semantics with the
+   nicer semantics. *)
 
 (* Useful with DEP_PURE_ONCE_REWRITE_TAC. *)
 Theorem no_out_of_bounds:
-  SND (heap_use_bound p (from_state s)) ⊆ s.memaddrs ⇒
-  evaluate (p, s) = nice_evaluate (p, s)
+  ∀p s.
+    SND (working_set p (state_to_context s)) ⊆ s.memaddrs ⇒
+    evaluate (p, s) = nice_evaluate (p, s)
 Proof
-  cheat
+  recInduct panSemTheory.evaluate_ind
+  >> rpt strip_tac
+    >- simp[evaluate_def, nice_evaluate_def]
+    >- (simp[evaluate_def, nice_evaluate_def]
+      >> TOP_CASE_TAC
+      >> AP_TERM_TAC
+      >> first_x_assum $ match_mp_tac o MP_CANON
+      >> simp[state_to_context_def]
+      >> cheat)
+  >> rpt cheat
 QED
 
 
