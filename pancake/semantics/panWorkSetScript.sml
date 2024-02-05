@@ -15,7 +15,7 @@
 
 open preamble panLangTheory panSemTheory;
 
-val _ = new_theory "liang";
+val _ = new_theory "panWorkSet";
 
 
 (* A "nice" modification of the Pancake functional semantics that does not check
@@ -259,7 +259,7 @@ Proof
       >> AP_TERM_TAC
       >> first_x_assum $ match_mp_tac o MP_CANON
       >> simp[state_to_context_def]
-      >> cheat)
+      >> )
   >> rpt cheat
 QED
 
