@@ -171,7 +171,7 @@ Datatype:
                 | TypeError mlstring
                 | AssembleError
                 | ConfigError mlstring
-                | ScopeError
+                | ScopeError mlstring mlstring
 End
 
 Definition find_next_newline_def:
@@ -278,13 +278,13 @@ Definition compile_pancake_def:
   case panPtreeConversion$parse_funs_to_ast input of
   | NONE => Failure (ParseError (strlit "Failed pancake parsing"))
   | SOME funs =>
-      if ¬scope_check_prog funs then
-        (Failure ScopeError)
-      else
-        let _ = empty_ffi (strlit "finished: lexing and parsing") in
-        case pan_to_target$compile_prog c funs of
-        | NONE => (Failure AssembleError)
-        | SOME (bytes,data,c) => (Success (bytes,data,c))
+      case scope_check funs of
+      | SOME (x, fname) => (Failure (ScopeError x fname))
+      | NONE =>
+          let _ = empty_ffi (strlit "finished: lexing and parsing") in
+          case pan_to_target$compile_prog c funs of
+          | NONE => (Failure AssembleError)
+          | SOME (bytes,data,c) => (Success (bytes,data,c))
 End
 
 (* The top-level compiler *)
@@ -299,7 +299,8 @@ val error_to_str_def = Define`
      else s) /\
   (error_to_str (ConfigError s) = concat [strlit "### ERROR: config error\n"; s; strlit "\n"]) /\
   (error_to_str AssembleError = strlit "### ERROR: assembly error\n") /\
-  (error_to_str ScopeError = strlit "### ERROR: scope error\n")`;
+  (error_to_str (ScopeError name fname) =
+    concat [strlit "### ERROR: scope error\n"; name; strlit " is not in scope in "; fname; strlit "\n"])`;
 
 val is_error_msg_def = Define `
   is_error_msg x = mlstring$isPrefix (strlit "###") x`;
