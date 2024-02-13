@@ -245,6 +245,19 @@ End
    program is within the allocated heap, we may replace the semantics with the
    nicer semantics. *)
 
+Theorem foo:
+  THE (eval s e) ∈ range e (state_to_context s)
+Proof
+  cheat
+QED
+
+Theorem working_set_mono:
+  s.locals_memory ⊆ lm ⇒ 
+  SND (working_set p s) ⊆ SND (working_set p (s with locals_memory := lm))
+Proof
+  cheat
+QED
+
 (* Useful with DEP_PURE_ONCE_REWRITE_TAC. *)
 Theorem no_out_of_bounds:
   ∀p s.
@@ -258,10 +271,42 @@ Proof
       >> TOP_CASE_TAC
       >> AP_TERM_TAC
       >> first_x_assum $ match_mp_tac o MP_CANON
+      >> simp[]
+      >> last_x_assum mp_tac
+      >> simp[working_set_def, state_to_context_def]
+      >> qmatch_goalsub_abbrev_tac `SND (_ a) ⊆ _ ⇒ SND b ⊆ _`
+
+      >> Q.SUBGOAL_THEN `SND b ⊆ SND a` assume_tac
+
+
+      >> subgoal `SND b ⊆ SND a`
+      >> `SND b ⊆ SND a` suffices_by (simp[SUBSET_DEF,ELIM_UNCURRY,IN_DEF])
+
+
+      >> last_x_assum mp_tac
+      >> simp[state_to_context_def, working_set_def]
+      >> qmatch_goalsub_abbrev_tac ‘SND(_ a1) ⊆ _ ⇒ SND a2 ⊆ _’
+      >> ‘SND a2 ⊆ SND a1’ suffices_by (simp[SUBSET_DEF,ELIM_UNCURRY,IN_DEF])
+      >> MAP_EVERY qunabbrev_tac [‘a1’,‘a2’]
+
+
       >> simp[state_to_context_def]
-      >> )
+      >> simp[working_set_def]
+      >> ``
+
+
+      >> EVAL_TAC
+      >> simp[]
+
+      >> cheat)
   >> rpt cheat
 QED
+
+(* ways of simplifying an assumption:
+     >> last_x_assum $ assume_tac o SRULE[working_set_def]
+fs[working_set_def]
+
+thanks gordon *)
 
 
 val _ = export_theory ();
