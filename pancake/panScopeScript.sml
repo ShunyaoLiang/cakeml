@@ -65,16 +65,12 @@ Definition scope_check_prog_def:
   scope_check_prog ctxt (TailCall trgt args) =
     OPTION_CHOICE
       (scope_check_exp ctxt trgt)
-      (if ¬EVERY (IS_NONE o scope_check_exp ctxt) args
-          then EL 0 (FILTER IS_SOME (MAP (scope_check_exp ctxt) args))
-       else NONE) ∧
+      (scope_check_exps ctxt args) ∧
   scope_check_prog ctxt (RetCall rt hdl trgt args) =
     OPTION_CHOICE
       (scope_check_exp ctxt trgt)
       (OPTION_CHOICE
-        (if ¬EVERY (IS_NONE o scope_check_exp ctxt) args
-            then EL 0 (FILTER IS_SOME (MAP (scope_check_exp ctxt) args))
-         else NONE)
+        (scope_check_exps ctxt args)
         (if ¬MEM rt ctxt.vars
             then SOME (rt, ctxt.fname)
          else
@@ -85,9 +81,7 @@ Definition scope_check_prog_def:
                   then SOME (evar, ctxt.fname)
                else scope_check_prog (ctxt with vars := evar :: ctxt.vars) p)) ∧
   scope_check_prog ctxt (ExtCall fname ptr1 len1 ptr2 len2) =
-    FOLDL OPTION_CHOICE
-          NONE
-          (MAP (scope_check_exp ctxt) [ptr1;len1;ptr2;len2]) ∧
+    scope_check_exps ctxt [ptr1;len1;ptr2;len2] ∧
   scope_check_prog ctxt (Raise eid excp) = scope_check_exp ctxt excp ∧
   scope_check_prog ctxt (Return rt) = scope_check_exp ctxt rt ∧
   scope_check_prog ctxt Tick = NONE
