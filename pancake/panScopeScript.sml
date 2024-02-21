@@ -87,7 +87,7 @@ Definition scope_check_prog_def:
   scope_check_prog ctxt Tick = NONE
 End
 
-Definition scope_check_funs:
+Definition scope_check_funs_def:
   scope_check_funs fnames [] = NONE ∧
   scope_check_funs fnames ((fname, _, body)::funs) =
     let ctxt = <| vars := [] ; funcs := fnames ; fname := fname |> in
