@@ -25,36 +25,6 @@ val () = use_long_names := true;
 
 val spec64 = INST_TYPE[alpha|->``:64``]
 
-Definition scope_check_exp_alt_def:
-  scope_check_exp_alt ctxt (Const c) = NONE ∧
-  scope_check_exp_alt ctxt (Var vname) =
-    (if ¬MEM vname ctxt.vars then SOME (vname, ctxt.fname) else NONE) ∧
-  scope_check_exp_alt ctxt (Label fname) =
-    (if ¬MEM fname ctxt.funcs then SOME (fname, ctxt.fname) else NONE) ∧
-  scope_check_exp_alt ctxt (Struct es) =
-    scope_check_exps_alt ctxt es ∧
-  scope_check_exp_alt ctxt (Field index e) = scope_check_exp_alt ctxt e ∧
-  scope_check_exp_alt ctxt (Load shape e) = scope_check_exp_alt ctxt e ∧
-  scope_check_exp_alt ctxt (LoadByte e) = scope_check_exp_alt ctxt e ∧
-  scope_check_exp_alt ctxt (Op bop es) =
-    scope_check_exps_alt ctxt es ∧
-  scope_check_exp_alt ctxt (Panop pop es) =
-    scope_check_exps_alt ctxt es ∧
-  scope_check_exp_alt ctxt (Cmp cmp e1 e2) =
-    OPTION_CHOICE
-      (scope_check_exp_alt ctxt e1)
-      (scope_check_exp_alt ctxt e2) ∧
-  scope_check_exp_alt ctxt (Shift sh e n) = scope_check_exp_alt ctxt e ∧
-  scope_check_exp_alt ctxt BaseAddr = NONE ∧
-  scope_check_exps_alt ctxt [] = NONE ∧
-  scope_check_exps_alt ctxt (e::es) =
-    OPTION_CHOICE (scope_check_exp_alt ctxt e) (scope_check_exps_alt ctxt es)
-Termination
-  WF_REL_TAC `measure (λx. case x of
-                             INL (ctxt, e) => exp_size ARB e
-                           | INR (ctxt, es) => list_size (exp_size ARB) es)`
-End
-
 val res = translate $ spec64 $ panScopeTheory.scope_check_exp_def;
 val res = translate $ spec64 $ panScopeTheory.scope_check_prog_def;
 val res = translate $ INST_TYPE[beta|->``:64``] panScopeTheory.scope_check_def;

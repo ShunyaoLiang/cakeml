@@ -24,24 +24,17 @@ Definition scope_check_exp_def:
   scope_check_exp ctxt (Field index e) = scope_check_exp ctxt e ∧
   scope_check_exp ctxt (Load shape e) = scope_check_exp ctxt e ∧
   scope_check_exp ctxt (LoadByte e) = scope_check_exp ctxt e ∧
-  scope_check_exp ctxt (Op bop es) =
-    scope_check_exps ctxt es ∧
-  scope_check_exp ctxt (Panop pop es) =
-    scope_check_exps ctxt es ∧
+  scope_check_exp ctxt (Op bop es) = scope_check_exps ctxt es ∧
+  scope_check_exp ctxt (Panop pop es) = scope_check_exps ctxt es ∧
   scope_check_exp ctxt (Cmp cmp e1 e2) =
     OPTION_CHOICE
       (scope_check_exp ctxt e1)
       (scope_check_exp ctxt e2) ∧
   scope_check_exp ctxt (Shift sh e n) = scope_check_exp ctxt e ∧
   scope_check_exp ctxt BaseAddr = NONE ∧
-  scope_check_exps ctxt es =
-    (if ¬EVERY (IS_NONE o scope_check_exp ctxt) es
-        then EL 0 (FILTER IS_SOME (MAP (scope_check_exp ctxt) es))
-     else NONE)
-Termination
-  WF_REL_TAC `measure (λx. case x of
-                             INL (ctxt, e) => exp_size ARB e
-                           | INR (ctxt, es) => list_size (exp_size ARB) es)`
+  scope_check_exps ctxt [] = NONE ∧
+  scope_check_exps ctxt (e::es) =
+    OPTION_CHOICE (scope_check_exp ctxt e) (scope_check_exps ctxt es)
 End
 
 Definition scope_check_prog_def:
