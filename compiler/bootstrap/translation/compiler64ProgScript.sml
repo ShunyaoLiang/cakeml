@@ -27,6 +27,8 @@ val spec64 = INST_TYPE[alpha|->``:64``]
 
 val res = translate $ spec64 $ panScopeTheory.scope_check_exp_def;
 val res = translate $ spec64 $ panScopeTheory.scope_check_prog_def;
+val res = translate $
+  INST_TYPE[beta|->``:64``] panScopeTheory.scope_check_funs_def;
 val res = translate $ INST_TYPE[beta|->``:64``] panScopeTheory.scope_check_def;
 
 val max_heap_limit_64_def = Define`

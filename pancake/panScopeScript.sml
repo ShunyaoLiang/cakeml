@@ -87,22 +87,20 @@ Definition scope_check_prog_def:
   scope_check_prog ctxt Tick = NONE
 End
 
+Definition scope_check_funs:
+  scope_check_funs fnames [] = NONE ∧
+  scope_check_funs fnames ((fname, _, body)::funs) =
+    let ctxt = <| vars := [] ; funcs := fnames ; fname := fname |> in
+      OPTION_CHOICE (scope_check_prog ctxt body)
+                    (scope_check_funs fnames funs)
+End
+
 (* The scope checker returns NONE to indicate that there is no scope error, and
    SOME (name, fname) to indicate that name is not in scope in an expression
    within the function fname. The first component name may be the name of a
    variable or a function. *)
 Definition scope_check_def:
-  scope_check funs =
-  let fnames = MAP FST funs;
-      bodies = MAP (SND o SND) funs in
-    FOLDL OPTION_CHOICE
-          NONE
-          (MAP2 (λfname body. scope_check_prog <| vars := [] ;
-                                                  funcs := fnames ;
-                                                  fname := fname |>
-                                               body)
-                 fnames
-                 bodies)
+  scope_check funs = scope_check_funs (MAP FST funs) funs
 End
 
 
