@@ -43,7 +43,9 @@ Definition scope_check_prog_def:
     OPTION_CHOICE (scope_check_exp ctxt e)
                   (scope_check_prog (ctxt with vars := v :: ctxt.vars) p) ∧
   scope_check_prog ctxt (Assign v e) =
-    (if MEM v ctxt.vars then NONE else scope_check_exp ctxt e) ∧
+    (if ¬MEM v ctxt.vars
+        then SOME (v, ctxt.fname)
+     else scope_check_exp ctxt e) ∧
   scope_check_prog ctxt (Store ad v) =
     OPTION_CHOICE (scope_check_exp ctxt ad)
                   (scope_check_exp ctxt v) ∧
