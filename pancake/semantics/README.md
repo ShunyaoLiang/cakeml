@@ -21,6 +21,10 @@ panLang Properties
 [panSemScript.sml](panSemScript.sml):
 Semantics of panLang
 
+[panWorkSetScript.sml](panWorkSetScript.sml):
+Automate verification of the property that a Pancake program does not access
+memory that is out of bounds.
+
 [pan_commonPropsScript.sml](pan_commonPropsScript.sml):
 Common Properties for Pancake ILS
 
