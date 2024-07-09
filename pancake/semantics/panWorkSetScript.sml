@@ -94,6 +94,7 @@ Definition nice_mem_stores_def:
 End
 
 val evaluate_ty = specffi (ty_antiq (type_of (Term `evaluate`)));
+val eval_ty = specffi (ty_antiq (type_of (Term ‘eval’)));
 
 Definition nice_evaluate_def:
   nice_evaluate (While e c, s) = evaluate (While e c, s) ∧
@@ -103,7 +104,7 @@ Definition nice_evaluate_def:
   ^(spec_eqn_strip_forall
     (subst
       [ Term `evaluate:^evaluate_ty` |-> Term `nice_evaluate:^evaluate_ty`,
-        Term `eval`                  |-> Term `nice_eval`,
+        Term `eval:^eval_ty`         |-> Term `nice_eval:^eval_ty`,
         Term `mem_stores`            |-> Term `nice_mem_stores`,
         Term `mem_store_byte`        |-> Term `nice_mem_store_byte` ]
       (concl evaluate_def)))
